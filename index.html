@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Storj Network Stats</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #e0e0e0;
+        }
+        h1 {
+            text-align: center;
+            color: #00c853;
+        }
+        #date-info {
+            text-align: center;
+            color: #888;
+            margin-bottom: 20px;
+        }
+        #chart {
+            width: 100%;
+            max-width: 800px;
+            height: 500px;
+            margin: 0 auto;
+        }
+        #error {
+            text-align: center;
+            color: #ff5252;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Storj Storage by Satellite</h1>
+    <div id="date-info"></div>
+    <div id="error"></div>
+    <div id="chart"></div>
+    <script>
+        const SATELLITE_NAMES = {
+            'ap1.storj.io': 'AP1',
+            'us1.storj.io': 'US1',
+            'eu1.storj.io': 'EU1',
+            'saltlake.tardigrade.io': 'Salt Lake'
+        };
+
+        function satelliteName(key) {
+            const host = key.split('@')[1]?.replace(':7777', '') || key;
+            return SATELLITE_NAMES[host] || host;
+        }
+
+        function formatBytes(bytes) {
+            const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'];
+            let i = 0;
+            let val = bytes;
+            while (val >= 1024 && i < units.length - 1) {
+                val /= 1024;
+                i++;
+            }
+            return val.toFixed(2) + ' ' + units[i];
+        }
+
+        function dataUrl(date) {
+            const y = date.getUTCFullYear();
+            const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+            const d = String(date.getUTCDate()).padStart(2, '0');
+            return `https://raw.githubusercontent.com/elek/storjstats/refs/heads/main/${y}/${m}/${d}/data.json`;
+        }
+
+        async function fetchLatestData() {
+            const today = new Date();
+            for (let i = 0; i < 14; i++) {
+                const date = new Date(today);
+                date.setDate(today.getDate() - i);
+                const url = dataUrl(date);
+                try {
+                    const resp = await fetch(url);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        return { data, date };
+                    }
+                } catch (e) {
+                    // try previous day
+                }
+            }
+            return null;
+        }
+
+        async function main() {
+            const result = await fetchLatestData();
+            if (!result) {
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = 'Could not load data from the last 14 days.';
+                return;
+            }
+
+            const { data, date } = result;
+            const y = date.getUTCFullYear();
+            const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+            const d = String(date.getUTCDate()).padStart(2, '0');
+            document.getElementById('date-info').textContent = `Data from ${y}-${m}-${d}`;
+
+            const chartData = Object.entries(data).map(([key, val]) => ({
+                name: satelliteName(key),
+                value: val.storage_total_bytes
+            }));
+
+            chartData.sort((a, b) => b.value - a.value);
+
+            const chart = echarts.init(document.getElementById('chart'));
+            chart.setOption({
+                tooltip: {
+                    trigger: 'item',
+                    formatter: function (params) {
+                        return `${params.name}<br/>${formatBytes(params.value)} (${params.percent}%)`;
+                    }
+                },
+                legend: {
+                    orient: 'horizontal',
+                    bottom: 10,
+                    textStyle: { color: '#ccc' }
+                },
+                series: [{
+                    type: 'pie',
+                    radius: ['35%', '65%'],
+                    avoidLabelOverlap: true,
+                    itemStyle: {
+                        borderRadius: 6,
+                        borderColor: '#1a1a2e',
+                        borderWidth: 2
+                    },
+                    label: {
+                        color: '#ccc',
+                        formatter: '{b}\n{d}%'
+                    },
+                    data: chartData
+                }]
+            });
+
+            window.addEventListener('resize', () => chart.resize());
+        }
+
+        main();
+    </script>
+</body>
+</html>
