@@ -13,33 +13,110 @@
             background: #1a1a2e;
             color: #e0e0e0;
         }
-        h1 {
-            text-align: center;
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            max-width: 1200px;
+            margin: 0 auto 20px;
+            padding: 0 0 12px;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.4em;
+            font-weight: 600;
             color: #00c853;
         }
-        #date-info {
-            text-align: center;
-            color: #888;
-            margin-bottom: 20px;
+        header input[type="date"] {
+            background: #16213e;
+            color: #e0e0e0;
+            border: 1px solid #2a2a4a;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 0.95em;
+            font-family: inherit;
+            cursor: pointer;
+            outline: none;
         }
-        #chart {
-            width: 100%;
-            max-width: 800px;
-            height: 500px;
+        header input[type="date"]:hover {
+            border-color: #00c853;
+        }
+        header input[type="date"]:focus {
+            border-color: #00c853;
+            box-shadow: 0 0 0 2px rgba(0, 200, 83, 0.2);
+        }
+        header input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(0.7);
+            cursor: pointer;
+        }
+        .charts {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            max-width: 1200px;
             margin: 0 auto;
+        }
+        .chart-container {
+            flex: 1 1 500px;
+            max-width: 600px;
+        }
+        .chart-container h2 {
+            text-align: center;
+            color: #aaa;
+            font-size: 1.1em;
+            margin-bottom: 5px;
+        }
+        .chart {
+            width: 100%;
+            height: 450px;
         }
         #error {
             text-align: center;
             color: #ff5252;
             display: none;
         }
+        #nodes-table {
+            max-width: 1200px;
+            margin: 30px auto;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        #nodes-table th, #nodes-table td {
+            padding: 8px 14px;
+            text-align: right;
+            border-bottom: 1px solid #333;
+        }
+        #nodes-table th {
+            color: #00c853;
+            font-weight: 600;
+        }
+        #nodes-table td:first-child, #nodes-table th:first-child {
+            text-align: left;
+        }
+        #nodes-table tr:hover {
+            background: #222244;
+        }
     </style>
 </head>
 <body>
-    <h1>Storj Storage by Satellite</h1>
-    <div id="date-info"></div>
+    <header>
+        <h1>Storj Network Stats</h1>
+        <input type="date" id="date-picker">
+    </header>
     <div id="error"></div>
-    <div id="chart"></div>
+    <div class="charts">
+        <div class="chart-container">
+            <h2>Storage by Satellite</h2>
+            <div id="chart-storage" class="chart"></div>
+        </div>
+        <div class="chart-container">
+            <h2>Nodes by Satellite</h2>
+            <div id="chart-nodes" class="chart"></div>
+        </div>
+    </div>
+    <table id="nodes-table"></table>
     <script>
         const SATELLITE_NAMES = {
             'ap1.storj.io': 'AP1',
@@ -64,11 +141,27 @@
             return val.toFixed(2) + ' ' + units[i];
         }
 
-        function dataUrl(date) {
+        function baseUrl(date) {
             const y = date.getUTCFullYear();
             const m = String(date.getUTCMonth() + 1).padStart(2, '0');
             const d = String(date.getUTCDate()).padStart(2, '0');
-            return `https://raw.githubusercontent.com/elek/storjstats/refs/heads/main/${y}/${m}/${d}/data.json`;
+            return `https://raw.githubusercontent.com/elek/storjstats/refs/heads/main/${y}/${m}/${d}`;
+        }
+
+        async function fetchDataForDate(date) {
+            const base = baseUrl(date);
+            try {
+                const [dataResp, nodesResp] = await Promise.all([
+                    fetch(base + '/data.json'),
+                    fetch(base + '/nodes.json')
+                ]);
+                if (dataResp.ok && nodesResp.ok) {
+                    const data = await dataResp.json();
+                    const nodes = await nodesResp.json();
+                    return { data, nodes, date };
+                }
+            } catch (e) {}
+            return null;
         }
 
         async function fetchLatestData() {
@@ -76,48 +169,40 @@
             for (let i = 0; i < 14; i++) {
                 const date = new Date(today);
                 date.setDate(today.getDate() - i);
-                const url = dataUrl(date);
-                try {
-                    const resp = await fetch(url);
-                    if (resp.ok) {
-                        const data = await resp.json();
-                        return { data, date };
-                    }
-                } catch (e) {
-                    // try previous day
-                }
+                const result = await fetchDataForDate(date);
+                if (result) return result;
             }
             return null;
         }
 
-        async function main() {
-            const result = await fetchLatestData();
-            if (!result) {
-                document.getElementById('error').style.display = 'block';
-                document.getElementById('error').textContent = 'Could not load data from the last 14 days.';
-                return;
-            }
+        async function fetchNodesForDate(date) {
+            const base = baseUrl(date);
+            try {
+                const resp = await fetch(base + '/nodes.json');
+                if (resp.ok) return await resp.json();
+            } catch (e) {}
+            return null;
+        }
 
-            const { data, date } = result;
-            const y = date.getUTCFullYear();
-            const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-            const d = String(date.getUTCDate()).padStart(2, '0');
-            document.getElementById('date-info').textContent = `Data from ${y}-${m}-${d}`;
+        function formatNumber(n) {
+            return n.toLocaleString();
+        }
 
-            const chartData = Object.entries(data).map(([key, val]) => ({
-                name: satelliteName(key),
-                value: val.storage_total_bytes
-            }));
+        function formatDelta(current, previous) {
+            if (previous === undefined) return '';
+            const diff = current - previous;
+            if (diff === 0) return '';
+            const sign = diff > 0 ? '+' : '';
+            const arrow = diff > 0 ? '\u{1F53A}' : '\u{1F53B}';
+            return ` <span style="font-size:0.8em;color:${diff > 0 ? '#66bb6a' : '#ef5350'}">(${arrow} ${sign}${formatNumber(diff)})</span>`;
+        }
 
-            chartData.sort((a, b) => b.value - a.value);
-
-            const chart = echarts.init(document.getElementById('chart'));
+        function makePieChart(elId, data, tooltipFormatter) {
+            const chart = echarts.init(document.getElementById(elId));
             chart.setOption({
                 tooltip: {
                     trigger: 'item',
-                    formatter: function (params) {
-                        return `${params.name}<br/>${formatBytes(params.value)} (${params.percent}%)`;
-                    }
+                    formatter: tooltipFormatter
                 },
                 legend: {
                     orient: 'horizontal',
@@ -137,11 +222,156 @@
                         color: '#ccc',
                         formatter: '{b}\n{d}%'
                     },
-                    data: chartData
+                    data: data
                 }]
             });
+            return chart;
+        }
 
-            window.addEventListener('resize', () => chart.resize());
+        let storageChart = null;
+        let nodesChart = null;
+
+        function setDatePicker(date) {
+            const y = date.getUTCFullYear();
+            const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+            const d = String(date.getUTCDate()).padStart(2, '0');
+            document.getElementById('date-picker').value = `${y}-${m}-${d}`;
+        }
+
+        async function renderData(result) {
+            const { data, nodes, date } = result;
+            document.getElementById('error').style.display = 'none';
+
+            // Storage pie chart
+            const storageData = Object.entries(data).map(([key, val]) => ({
+                name: satelliteName(key),
+                value: val.storage_total_bytes
+            })).sort((a, b) => b.value - a.value);
+
+            if (!storageChart) {
+                storageChart = makePieChart('chart-storage', storageData, function (params) {
+                    return `${params.name}<br/>${formatBytes(params.value)} (${params.percent}%)`;
+                });
+            } else {
+                storageChart.setOption({ series: [{ data: storageData }] });
+            }
+
+            // Nodes bar chart (active nodes only)
+            const satEntries = Object.entries(nodes).map(([key, val]) => ({
+                name: satelliteName(key),
+                ...val,
+                unvetted: val.total_nodes - val.vetted_nodes
+            })).sort((a, b) => b.active_nodes - a.active_nodes);
+            const satNames = satEntries.map(s => s.name);
+
+            const nodesOpts = {
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'shadow' },
+                    formatter: function (params) {
+                        return `${params[0].axisValue}<br/>${params[0].marker} Active: ${formatNumber(params[0].value)}`;
+                    }
+                },
+                grid: { left: 60, right: 20, top: 20, bottom: 30 },
+                xAxis: {
+                    type: 'category',
+                    data: satNames,
+                    axisLabel: { color: '#ccc' },
+                    axisLine: { lineStyle: { color: '#555' } }
+                },
+                yAxis: {
+                    type: 'value',
+                    axisLabel: { color: '#ccc', formatter: function(v) { return (v / 1000) + 'k'; } },
+                    splitLine: { lineStyle: { color: '#333' } }
+                },
+                series: [{
+                    name: 'Active',
+                    type: 'bar',
+                    data: satEntries.map(s => s.active_nodes),
+                    itemStyle: { color: '#00c853' }
+                }]
+            };
+
+            if (!nodesChart) {
+                nodesChart = echarts.init(document.getElementById('chart-nodes'));
+            }
+            nodesChart.setOption(nodesOpts);
+
+            // Fetch 7-day-old nodes data for deltas
+            const prevDate = new Date(date);
+            prevDate.setDate(prevDate.getDate() - 7);
+            const prevNodes = await fetchNodesForDate(prevDate);
+
+            const prevByName = {};
+            if (prevNodes) {
+                for (const [key, val] of Object.entries(prevNodes)) {
+                    prevByName[satelliteName(key)] = {
+                        ...val,
+                        unvetted: val.total_nodes - val.vetted_nodes
+                    };
+                }
+            }
+
+            // Nodes status table
+            const categories = [
+                { key: 'active_nodes', label: 'Active' },
+                { key: 'suspended_nodes', label: 'Suspended' },
+                { key: 'disqualified_nodes', label: 'Disqualified' },
+                { key: 'exited_nodes', label: 'Exited' },
+                { key: 'vetted_nodes', label: 'Vetted' },
+                { key: 'unvetted', label: 'Unvetted' },
+            ];
+
+            const satellites = Object.entries(nodes).map(([key, val]) => ({
+                name: satelliteName(key),
+                ...val,
+                unvetted: val.total_nodes - val.vetted_nodes
+            })).sort((a, b) => b.active_nodes - a.active_nodes);
+
+            let html = '<thead><tr><th>Satellite</th>';
+            for (const cat of categories) html += `<th>${cat.label}</th>`;
+            html += '</tr></thead><tbody>';
+            for (const sat of satellites) {
+                const prev = prevByName[sat.name];
+                html += `<tr><td>${sat.name}</td>`;
+                for (const cat of categories) {
+                    const val = sat[cat.key];
+                    const prevVal = prev ? prev[cat.key] : undefined;
+                    html += `<td>${formatNumber(val)}${formatDelta(val, prevVal)}</td>`;
+                }
+                html += '</tr>';
+            }
+            html += '</tbody>';
+            document.getElementById('nodes-table').innerHTML = html;
+        }
+
+        async function main() {
+            const result = await fetchLatestData();
+            if (!result) {
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = 'Could not load data from the last 14 days.';
+                return;
+            }
+
+            setDatePicker(result.date);
+            await renderData(result);
+
+            document.getElementById('date-picker').addEventListener('change', async function () {
+                const parts = this.value.split('-');
+                const picked = new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2]));
+                const res = await fetchDataForDate(picked);
+                if (res) {
+                    await renderData(res);
+                } else {
+                    document.getElementById('error').style.display = 'block';
+                    document.getElementById('error').textContent = `No data available for ${this.value}`;
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                if (storageChart) storageChart.resize();
+                if (nodesChart) nodesChart.resize();
+            });
         }
 
         main();
