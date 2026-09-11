@@ -17,6 +17,9 @@ jobs:
       - name: Download stats
         run: ./download.sh
 
+      - name: Build trends
+        run: ./build_trends.py
+
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"

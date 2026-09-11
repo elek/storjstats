@@ -6,6 +6,14 @@
     <title>Storj Network Stats</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
     <style>
+        :root {
+            /* Ink for the trend section. The chart colours themselves live in
+               the script, since ECharts needs them as values. */
+            --text-primary: #e0e0e0;
+            --text-secondary: #aaa;
+            --text-muted: #898781;
+            --hairline: #2a2a4a;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0;
@@ -98,6 +106,182 @@
         #nodes-table tr:hover {
             background: #222244;
         }
+
+        /* ---- Trend section ---- */
+        .section {
+            max-width: 1200px;
+            margin: 40px auto 0;
+        }
+        .section > h2 {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 0 0 4px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--hairline);
+        }
+        .section > p.note {
+            color: var(--text-muted);
+            font-size: 0.85em;
+            margin: 10px 0 0;
+        }
+        /* One filter row, above everything it scopes. */
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 24px;
+            margin: 18px 0 24px;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .control-group > span {
+            color: var(--text-muted);
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .control-group button {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--hairline);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font: inherit;
+            font-size: 0.9em;
+            cursor: pointer;
+            min-height: 32px;
+        }
+        .control-group button:hover {
+            border-color: #4a4a6a;
+            color: var(--text-primary);
+        }
+        .control-group button[aria-pressed="true"] {
+            border-color: #00c853;
+            color: #00c853;
+            font-weight: 600;
+        }
+        /* KPI row: every satellite's current value readable without hovering. */
+        .kpi-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+        .kpi-tile {
+            flex: 1 1 180px;
+            border: 1px solid var(--hairline);
+            border-radius: 10px;
+            padding: 14px 16px;
+        }
+        .kpi-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            font-size: 0.85em;
+        }
+        .kpi-swatch {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            flex: none;
+        }
+        .kpi-value {
+            font-size: 1.55em;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 6px 0 2px;
+        }
+        .kpi-delta {
+            font-size: 0.85em;
+            color: var(--text-muted);
+        }
+        .kpi-spark {
+            display: block;
+            margin-top: 10px;
+        }
+        .trend-chart {
+            width: 100%;
+            height: 420px;
+        }
+        .chart-title {
+            color: var(--text-secondary);
+            font-size: 1em;
+            font-weight: 600;
+            margin: 0 0 2px;
+        }
+        .chart-sub {
+            color: var(--text-muted);
+            font-size: 0.82em;
+            margin: 0 0 8px;
+        }
+        .chart-block {
+            margin-bottom: 32px;
+        }
+        .small-multiples {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+            gap: 20px;
+        }
+        .small-multiples .trend-chart {
+            height: 210px;
+        }
+        .block-title {
+            font-size: 1.05em;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 36px 0 4px;
+            padding-top: 20px;
+            border-top: 1px solid var(--hairline);
+        }
+        .block-title + .chart-sub {
+            margin-bottom: 16px;
+        }
+        .table-wrap {
+            max-height: 460px;
+            overflow-y: auto;
+            border: 1px solid var(--hairline);
+            border-radius: 10px;
+        }
+        .trend-table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 0.9em;
+            font-variant-numeric: tabular-nums;
+        }
+        .trend-table th, .trend-table td {
+            padding: 7px 14px;
+            text-align: right;
+            border-bottom: 1px solid #2a2a3a;
+            white-space: nowrap;
+        }
+        .trend-table thead th {
+            position: sticky;
+            top: 0;
+            background: #16213e;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+        .trend-table td:first-child, .trend-table th:first-child {
+            text-align: left;
+        }
+        .trend-table tbody tr:hover {
+            background: #222244;
+        }
+        /* The three status panels need more width than a satellite panel. */
+        #status-charts {
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+        }
+        #status-charts .trend-chart {
+            height: 260px;
+        }
+        .hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -117,6 +301,122 @@
         </div>
     </div>
     <table id="nodes-table"></table>
+
+    <section class="section" id="trends">
+        <h2>Trends by satellite</h2>
+
+        <div class="controls">
+            <div class="control-group" role="group" aria-label="Date range">
+                <span>Range</span>
+                <button type="button" data-range="30">30 days</button>
+                <button type="button" data-range="90">90 days</button>
+                <button type="button" data-range="all" aria-pressed="true">All</button>
+            </div>
+            <div class="control-group" role="group" aria-label="View">
+                <span>View</span>
+                <button type="button" data-view="combined" aria-pressed="true">Combined</button>
+                <button type="button" data-view="split">Per satellite</button>
+                <button type="button" data-view="table">Table</button>
+            </div>
+        </div>
+
+        <div id="trend-error" style="display:none;color:#ff5252"></div>
+
+        <!-- Block 1: used space -->
+        <h3 class="block-title">Used space</h3>
+        <div class="kpi-row" id="kpi-row"></div>
+
+        <div id="space-combined">
+            <div class="chart-block">
+                <h4 class="chart-title">Daily</h4>
+                <p class="chart-sub" id="daily-sub">Used space per day, stacked by satellite</p>
+                <div id="chart-daily" class="trend-chart"></div>
+            </div>
+            <div class="chart-block">
+                <h4 class="chart-title">Monthly</h4>
+                <p class="chart-sub">Used space at each month end, stacked by satellite</p>
+                <div id="chart-monthly" class="trend-chart"></div>
+                <p class="note" id="monthly-empty" style="display:none">
+                    Fewer than three months in the selected range — widen the range to compare months.
+                </p>
+            </div>
+        </div>
+
+        <div id="space-split" class="hidden chart-block">
+            <h4 class="chart-title">Daily, one scale per satellite</h4>
+            <p class="chart-sub">Same data as the combined view, in PB. Each panel has its own
+                zero-based axis, so the smaller satellites are readable next to US1.</p>
+            <div class="small-multiples" id="small-multiples"></div>
+        </div>
+
+        <div id="space-table" class="hidden chart-block">
+            <h4 class="chart-title">Daily used space</h4>
+            <p class="chart-sub">Newest first. Month-end rows are the values shown in the monthly chart.</p>
+            <div class="table-wrap">
+                <table class="trend-table" id="trend-table"></table>
+            </div>
+        </div>
+
+        <!-- Block 2: active nodes -->
+        <h3 class="block-title">Active nodes</h3>
+        <p class="chart-sub">A node that serves several satellites is counted once by each of
+            them, so these series overlap and are never summed. EU1 and AP1 run within a few
+            hundred nodes of each other and their lines sit on top of one another — use
+            <em>Per satellite</em> to separate them. These axes do not start at zero.</p>
+        <div class="kpi-row" id="kpi-row-nodes"></div>
+
+        <div id="nodes-combined">
+            <div class="chart-block">
+                <h4 class="chart-title">Daily</h4>
+                <p class="chart-sub" id="nodes-daily-sub">Active nodes per day, one line per satellite</p>
+                <div id="chart-nodes-daily" class="trend-chart"></div>
+            </div>
+            <div class="chart-block">
+                <h4 class="chart-title">Monthly</h4>
+                <p class="chart-sub">Active nodes at each month end</p>
+                <div id="chart-nodes-monthly" class="trend-chart"></div>
+                <p class="note" id="nodes-monthly-empty" style="display:none">
+                    Fewer than three months in the selected range — widen the range to compare months.
+                </p>
+            </div>
+        </div>
+
+        <div id="nodes-split" class="hidden chart-block">
+            <h4 class="chart-title">Daily, one scale per satellite</h4>
+            <p class="chart-sub">Same data as the combined view. Each panel has its own zero-based axis.</p>
+            <div class="small-multiples" id="nodes-small-multiples"></div>
+        </div>
+
+        <div id="nodes-table-view" class="hidden chart-block">
+            <h4 class="chart-title">Daily active nodes</h4>
+            <p class="chart-sub">Newest first. Gaps are days the source reported zero active nodes.</p>
+            <div class="table-wrap">
+                <table class="trend-table" id="nodes-trend-table"></table>
+            </div>
+        </div>
+
+        <!-- Block 3: node status, monthly -->
+        <h3 class="block-title">Node status by month</h3>
+        <p class="chart-sub" id="status-sub">Suspended is a state, so it is read at month end.
+            Disqualified and exited are running totals, so they are shown as the number added
+            during the month — the difference between consecutive month-end snapshots.
+            <strong>*</strong> marks a month the data does not cover in full, so its per-month
+            counts are lower simply because less of the month has elapsed.</p>
+
+        <div id="status-charts" class="small-multiples"></div>
+        <p class="note" id="status-empty" style="display:none">
+            Fewer than three months in the selected range — widen the range to compare months.
+        </p>
+
+        <div id="status-table-view" class="hidden chart-block">
+            <div class="table-wrap">
+                <table class="trend-table" id="status-trend-table"></table>
+            </div>
+        </div>
+
+        <p class="note" id="trend-note"></p>
+    </section>
+
     <script>
         const SATELLITE_NAMES = {
             'ap1.storj.io': 'AP1',
@@ -345,7 +645,788 @@
             document.getElementById('nodes-table').innerHTML = html;
         }
 
+        // ---------------- Used space trends ----------------
+
+        const TRENDS_URL = 'https://raw.githubusercontent.com/elek/storjstats/refs/heads/main/trends.json';
+
+        // Categorical slots 1-4, dark steps, validated against the #1a1a2e
+        // page surface: all four clear the lightness band, the chroma floor,
+        // colour-blind separation (worst adjacent pair dE 8.4) and 3:1
+        // contrast. Colour is bound to a satellite, never to its rank, so
+        // reordering or filtering never repaints the survivors.
+        const SERIES_COLOR = {
+            'US1': '#3987e5',
+            'EU1': '#d95926',
+            'AP1': '#199e70',
+            'Salt Lake': '#c98500'
+        };
+        const FALLBACK_COLOR = '#898781';
+        const INK = { primary: '#e0e0e0', secondary: '#aaa', muted: '#898781' };
+        const SURFACE = '#1a1a2e';
+        const GRIDLINE = '#2c2c3a';
+        const AXIS = '#383848';
+        const PB = Math.pow(1024, 5);
+
+        function esc(s) {
+            return String(s).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function seriesColor(name) {
+            return SERIES_COLOR[name] || FALLBACK_COLOR;
+        }
+
+        // Charts plot PB rather than raw bytes, so the axis can pick round
+        // tick values. Tooltips and labels still read the original bytes.
+        function toPB(bytes) {
+            return bytes == null ? null : bytes / PB;
+        }
+
+        function formatPB(bytes) {
+            return (bytes / PB).toFixed(1);
+        }
+
+        let trends = null;
+        const trendState = { range: 'all', view: 'combined' };
+        // Values are ECharts instances or arrays of them, keyed by chart slot.
+        const trendCharts = {};
+
+        // Prefer the copy served alongside the page; fall back to raw.github
+        // so the file also works opened straight from disk.
+        async function fetchTrends() {
+            for (const url of ['trends.json', TRENDS_URL]) {
+                try {
+                    const resp = await fetch(url);
+                    if (resp.ok) return await resp.json();
+                } catch (e) { /* try the next source */ }
+            }
+            throw new Error('trends.json unavailable');
+        }
+
+        // The days and value arrays are parallel; slicing keeps them aligned.
+        function slicedTrends() {
+            const n = trends.days.length;
+            const count = trendState.range === 'all' ? n : Math.min(n, +trendState.range);
+            const from = n - count;
+            const out = { days: trends.days.slice(from), storage: {}, nodes: {} };
+            for (const sat of trends.satellites) {
+                out.storage[sat] = trends.storage[sat].slice(from);
+            }
+            for (const field of Object.keys(trends.nodes)) {
+                out.nodes[field] = {};
+                for (const sat of trends.satellites) {
+                    out.nodes[field][sat] = trends.nodes[field][sat].slice(from);
+                }
+            }
+            return out;
+        }
+
+        function totalsOf(slice) {
+            return slice.days.map((_, i) => {
+                let sum = 0;
+                for (const sat of trends.satellites) sum += slice.storage[sat][i] || 0;
+                return sum;
+            });
+        }
+
+        // Used space and node counts are stocks, not flows, so a month is
+        // represented by its last captured day rather than by a sum.
+        function monthEnds(slice) {
+            const months = [];
+            const byMonth = {};
+            slice.days.forEach((day, i) => {
+                const month = day.slice(0, 7);
+                if (!(month in byMonth)) months.push(month);
+                byMonth[month] = i;
+            });
+            return months.map(month => ({ month, index: byMonth[month], day: slice.days[byMonth[month]] }));
+        }
+
+        // Month ends across the whole history, so a month at the start of the
+        // visible range can still be differenced against the month before it.
+        function allMonthEnds() {
+            const byMonth = {};
+            trends.days.forEach((day, i) => { byMonth[day.slice(0, 7)] = i; });
+            return byMonth;
+        }
+
+        // disqualified and exited are cumulative counters, so the meaningful
+        // monthly figure is how many were added, not the running total.
+        function monthlyAdditions(field, months) {
+            const ends = allMonthEnds();
+            const keys = Object.keys(ends).sort();
+            const out = {};
+            for (const sat of trends.satellites) {
+                out[sat] = months.map(month => {
+                    const prev = keys[keys.indexOf(month) - 1];
+                    if (prev === undefined) return null;
+                    const a = trends.nodes[field][sat][ends[prev]];
+                    const b = trends.nodes[field][sat][ends[month]];
+                    return (a == null || b == null) ? null : b - a;
+                });
+            }
+            return out;
+        }
+
+        function tooltipRows(axisLabel, entries, total, format) {
+            const fmt = format || formatBytes;
+            let html = `<div style="color:${INK.muted};font-size:0.85em;margin-bottom:4px">${esc(axisLabel)}</div>`;
+            for (const e of entries) {
+                html += `<div style="display:flex;align-items:center;gap:8px;line-height:1.6">`
+                    + `<span style="display:inline-block;width:12px;height:2px;background:${e.color};flex:none"></span>`
+                    + `<span style="color:${INK.primary};font-weight:600">${esc(fmt(e.value))}</span>`
+                    + `<span style="color:${INK.secondary}">${esc(e.name)}</span></div>`;
+            }
+            if (total !== undefined) {
+                html += `<div style="border-top:1px solid #2a2a4a;margin-top:5px;padding-top:5px;`
+                    + `color:${INK.primary};font-weight:600">${esc(fmt(total))}`
+                    + `<span style="color:${INK.secondary};font-weight:400"> total</span></div>`;
+            }
+            return html;
+        }
+
+        // zeroBased is right for the stacked space charts, where area carries
+        // the value. Node counts sit in a narrow band far from zero, so those
+        // charts scale to the data and let the tick labels disclose the floor.
+        function valueAxis(name, zeroBased = true) {
+            return {
+                type: 'value',
+                min: zeroBased ? 0 : undefined,
+                scale: !zeroBased,
+                name: name,
+                nameTextStyle: { color: INK.muted, fontSize: 11, align: 'left' },
+                nameGap: 12,
+                axisLabel: { color: INK.muted },
+                axisLine: { show: false },
+                axisTick: { show: false },
+                splitLine: { lineStyle: { color: GRIDLINE, width: 1, type: 'solid' } }
+            };
+        }
+
+        function renderDailyChart(slice) {
+            const totals = totalsOf(slice);
+            const sats = trends.satellites;
+            const series = sats.map((sat, idx) => ({
+                name: sat,
+                type: 'line',
+                stack: 'used',
+                symbol: 'none',
+                lineStyle: { width: 2, color: seriesColor(sat) },
+                areaStyle: { color: seriesColor(sat), opacity: 0.55 },
+                itemStyle: { color: seriesColor(sat) },
+                // No focus-blur: the axis tooltip already lists every series,
+                // so dimming the rest only washes the chart out.
+                emphasis: { disabled: true },
+                // Only the top of the stack is direct-labelled, with the total.
+                endLabel: idx === sats.length - 1 ? {
+                    show: true,
+                    color: INK.primary,
+                    fontWeight: 600,
+                    formatter: () => formatBytes(totals[totals.length - 1]) + ' total'
+                } : { show: false },
+                data: slice.storage[sat].map(toPB)
+            }));
+
+            if (!trendCharts.daily) {
+                trendCharts.daily = echarts.init(document.getElementById('chart-daily'));
+            }
+            trendCharts.daily.setOption({
+                color: sats.map(seriesColor),
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: '#16213e',
+                    borderColor: '#2a2a4a',
+                    textStyle: { color: INK.primary },
+                    axisPointer: { type: 'line', lineStyle: { color: AXIS, width: 1 } },
+                    formatter: params => {
+                        const i = params[0].dataIndex;
+                        const entries = params.slice().reverse()
+                            .map(p => ({
+                                name: p.seriesName,
+                                value: slice.storage[p.seriesName][i],
+                                color: seriesColor(p.seriesName)
+                            }))
+                            .filter(e => e.value != null);
+                        return tooltipRows(slice.days[i], entries, totals[i]);
+                    }
+                },
+                legend: {
+                    data: sats,
+                    top: 0,
+                    itemWidth: 14,
+                    itemHeight: 8,
+                    textStyle: { color: INK.secondary }
+                },
+                grid: { left: 56, right: 110, top: 44, bottom: 34 },
+                xAxis: {
+                    type: 'category',
+                    boundaryGap: false,
+                    data: slice.days,
+                    axisLabel: { color: INK.muted, formatter: v => v.slice(5) },
+                    axisLine: { lineStyle: { color: AXIS, width: 1, type: 'solid' } },
+                    axisTick: { show: false }
+                },
+                yAxis: valueAxis('PB'),
+                series: series
+            }, { notMerge: true });
+        }
+
+        function renderMonthlyChart(slice) {
+            const ends = monthEnds(slice);
+            const sats = trends.satellites;
+
+            // Two columns spread over the full width reads as a broken chart
+            // rather than a comparison, so say so instead of drawing it.
+            const tooFew = ends.length < 3;
+            document.getElementById('chart-monthly').style.display = tooFew ? 'none' : '';
+            document.getElementById('monthly-empty').style.display = tooFew ? '' : 'none';
+            if (tooFew) return;
+
+            const totals = ends.map(e => {
+                let sum = 0;
+                for (const sat of sats) sum += slice.storage[sat][e.index] || 0;
+                return sum;
+            });
+            const last = sats.length - 1;
+            const series = sats.map((sat, idx) => ({
+                name: sat,
+                type: 'bar',
+                stack: 'used',
+                barMaxWidth: 24,
+                // A surface-coloured separation between touching segments,
+                // rather than a contrasting border drawn around them.
+                itemStyle: {
+                    color: seriesColor(sat),
+                    borderColor: SURFACE,
+                    borderWidth: 1,
+                    borderRadius: idx === last ? [4, 4, 0, 0] : 0
+                },
+                emphasis: { disabled: true },
+                label: idx === last ? {
+                    show: true,
+                    position: 'top',
+                    distance: 8,
+                    color: INK.secondary,
+                    fontSize: 11,
+                    formatter: p => formatPB(totals[p.dataIndex])
+                } : { show: false },
+                data: ends.map(e => toPB(slice.storage[sat][e.index]))
+            }));
+
+            if (!trendCharts.monthly) {
+                trendCharts.monthly = echarts.init(document.getElementById('chart-monthly'));
+            }
+            trendCharts.monthly.setOption({
+                color: sats.map(seriesColor),
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'shadow' },
+                    backgroundColor: '#16213e',
+                    borderColor: '#2a2a4a',
+                    textStyle: { color: INK.primary },
+                    formatter: params => {
+                        const i = params[0].dataIndex;
+                        const entries = params.slice().reverse()
+                            .map(p => ({
+                                name: p.seriesName,
+                                value: slice.storage[p.seriesName][ends[i].index],
+                                color: seriesColor(p.seriesName)
+                            }))
+                            .filter(e => e.value != null);
+                        return tooltipRows(ends[i].month + ' (as of ' + ends[i].day + ')', entries, totals[i]);
+                    }
+                },
+                legend: {
+                    data: sats,
+                    top: 0,
+                    itemWidth: 14,
+                    itemHeight: 8,
+                    textStyle: { color: INK.secondary }
+                },
+                grid: { left: 56, right: 24, top: 44, bottom: 34 },
+                xAxis: {
+                    type: 'category',
+                    data: ends.map(e => e.month),
+                    axisLabel: { color: INK.muted },
+                    axisLine: { lineStyle: { color: AXIS, width: 1, type: 'solid' } },
+                    axisTick: { show: false }
+                },
+                yAxis: valueAxis('PB'),
+                series: series
+            }, { notMerge: true });
+        }
+
+        // Builds (once) a titled chart panel per entry in `titles` inside
+        // `hostId`, and returns the ECharts instances, keyed in trendCharts.
+        function panels(hostId, key, titles, swatchOf) {
+            const host = document.getElementById(hostId);
+            if (!trendCharts[key] || trendCharts[key].length !== titles.length) {
+                (trendCharts[key] || []).forEach(c => c.dispose());
+                host.innerHTML = '';
+                trendCharts[key] = titles.map(text => {
+                    const block = document.createElement('div');
+                    const title = document.createElement('h5');
+                    title.className = 'chart-title';
+                    title.style.fontSize = '0.92em';
+                    title.style.display = 'flex';
+                    title.style.alignItems = 'center';
+                    title.style.gap = '8px';
+                    const swatch = swatchOf && swatchOf(text);
+                    if (swatch) {
+                        const dot = document.createElement('span');
+                        dot.className = 'kpi-swatch';
+                        dot.style.background = swatch;
+                        title.appendChild(dot);
+                    }
+                    title.appendChild(document.createTextNode(text));
+                    const el = document.createElement('div');
+                    el.className = 'trend-chart';
+                    block.appendChild(title);
+                    block.appendChild(el);
+                    host.appendChild(block);
+                    return echarts.init(el);
+                });
+            }
+            return trendCharts[key];
+        }
+
+        // One satellite per panel, each on its own zero-based axis.
+        function renderSmallMultiples(hostId, key, days, valuesBySat, plot, format) {
+            const sats = trends.satellites;
+            const charts = panels(hostId, key, sats, seriesColor);
+            sats.forEach((sat, i) => {
+                charts[i].setOption({
+                    tooltip: {
+                        trigger: 'axis',
+                        backgroundColor: '#16213e',
+                        borderColor: '#2a2a4a',
+                        textStyle: { color: INK.primary },
+                        axisPointer: { type: 'line', lineStyle: { color: AXIS, width: 1 } },
+                        formatter: params => tooltipRows(days[params[0].dataIndex],
+                            [{ name: sat, value: valuesBySat[sat][params[0].dataIndex],
+                               color: seriesColor(sat) }], undefined, format)
+                    },
+                    grid: { left: 52, right: 16, top: 12, bottom: 28 },
+                    xAxis: {
+                        type: 'category',
+                        boundaryGap: false,
+                        data: days,
+                        axisLabel: { color: INK.muted, fontSize: 10, formatter: v => v.slice(5) },
+                        axisLine: { lineStyle: { color: AXIS, width: 1, type: 'solid' } },
+                        axisTick: { show: false }
+                    },
+                    // The unit lives in the section subtitle here: a per-panel
+                    // axis name would collide with the panel title.
+                    yAxis: valueAxis(''),
+                    series: [{
+                        // One series per panel, so the title names it and no
+                        // legend box is needed.
+                        name: sat,
+                        type: 'line',
+                        symbol: 'none',
+                        connectNulls: false,
+                        lineStyle: { width: 2, color: seriesColor(sat) },
+                        itemStyle: { color: seriesColor(sat) },
+                        areaStyle: { color: seriesColor(sat), opacity: 0.1 },
+                        data: valuesBySat[sat].map(plot)
+                    }]
+                }, { notMerge: true });
+            });
+        }
+
+        // A line per satellite on one shared axis. Used where the satellites
+        // measure overlapping sets of nodes and must not be stacked or summed.
+        // opts: { axisName, labelFormatter, zeroBased, boundaryGap }
+        function lineChartOption(categories, valuesBySat, format, opts) {
+            const { axisName, labelFormatter, zeroBased, boundaryGap } = opts;
+            const sats = trends.satellites;
+            return {
+                color: sats.map(seriesColor),
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: '#16213e',
+                    borderColor: '#2a2a4a',
+                    textStyle: { color: INK.primary },
+                    axisPointer: { type: 'line', lineStyle: { color: AXIS, width: 1 } },
+                    formatter: params => {
+                        const i = params[0].dataIndex;
+                        const entries = sats
+                            .map(sat => ({ name: sat, value: valuesBySat[sat][i], color: seriesColor(sat) }))
+                            .filter(e => e.value != null)
+                            .sort((a, b) => b.value - a.value);
+                        // No total row: these series count overlapping sets.
+                        return tooltipRows(categories[i], entries, undefined, format);
+                    }
+                },
+                legend: {
+                    data: sats,
+                    top: 0,
+                    itemWidth: 14,
+                    itemHeight: 8,
+                    textStyle: { color: INK.secondary }
+                },
+                // Right padding keeps the last category label inside the plot.
+                grid: { left: 64, right: 48, top: 44, bottom: 34 },
+                xAxis: {
+                    type: 'category',
+                    // Month labels are wide enough to run into the y-axis
+                    // labels when the first point sits on the axis itself.
+                    boundaryGap: boundaryGap === true,
+                    data: categories,
+                    axisLabel: { color: INK.muted, formatter: labelFormatter },
+                    axisLine: { lineStyle: { color: AXIS, width: 1, type: 'solid' } },
+                    axisTick: { show: false }
+                },
+                yAxis: valueAxis(axisName, zeroBased === true),
+                series: sats.map(sat => ({
+                    name: sat,
+                    type: 'line',
+                    symbol: 'none',
+                    // Gaps stay gaps: joining across a missing day would draw a
+                    // slope the data never showed.
+                    connectNulls: false,
+                    lineStyle: { width: 2, color: seriesColor(sat) },
+                    itemStyle: { color: seriesColor(sat) },
+                    emphasis: { disabled: true },
+                    data: valuesBySat[sat]
+                }))
+            };
+        }
+
+        function sparkline(values, color) {
+            const clean = values.filter(v => v !== null && v !== undefined);
+            if (clean.length < 2) return '';
+            const w = 132, h = 30, pad = 2;
+            const min = Math.min(...clean), max = Math.max(...clean);
+            const span = max - min || 1;
+            const pts = values.map((v, i) => {
+                if (v === null || v === undefined) return null;
+                const x = pad + i * (w - 2 * pad) / (values.length - 1);
+                const y = h - pad - ((v - min) / span) * (h - 2 * pad);
+                return x.toFixed(1) + ',' + y.toFixed(1);
+            }).filter(Boolean).join(' ');
+            return `<svg class="kpi-spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"`
+                + ` aria-hidden="true" focusable="false">`
+                + `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2"`
+                + ` stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+        }
+
+        function rangeLabel(slice) {
+            return trendState.range === 'all' ? slice.days[0] : trendState.range + 'd ago';
+        }
+
+        function renderKpis(hostId, slice, valuesBySat, format) {
+            const label = rangeLabel(slice);
+            let html = '';
+            for (const sat of trends.satellites) {
+                const vals = valuesBySat[sat];
+                const current = [...vals].reverse().find(v => v !== null && v !== undefined);
+                const first = vals.find(v => v !== null && v !== undefined);
+                let delta = '';
+                if (current != null && first != null && first !== 0) {
+                    const pct = 100 * (current - first) / first;
+                    const up = pct >= 0;
+                    const color = Math.abs(pct) < 0.05 ? INK.muted : (up ? '#0ca30c' : '#ef5350');
+                    const sign = up ? '+' : '−';
+                    delta = `<span style="color:${color}">${sign}${Math.abs(pct).toFixed(1)}%</span>`
+                        + ` <span style="color:${INK.muted}">vs ${esc(label)}</span>`;
+                }
+                html += `<div class="kpi-tile">`
+                    + `<div class="kpi-label"><span class="kpi-swatch" style="background:${seriesColor(sat)}"></span>`
+                    + `${esc(sat)}</div>`
+                    + `<div class="kpi-value">${esc(current == null ? '—' : format(current))}</div>`
+                    + `<div class="kpi-delta">${delta}</div>`
+                    + sparkline(vals, seriesColor(sat))
+                    + `</div>`;
+            }
+            document.getElementById(hostId).innerHTML = html;
+        }
+
+        // rows: [{ label, values: {sat: value} }], newest first.
+        function renderValueTable(tableId, firstHeader, rows, format, totals) {
+            const sats = trends.satellites;
+            let html = `<thead><tr><th>${esc(firstHeader)}</th>`;
+            for (const sat of sats) html += `<th>${esc(sat)}</th>`;
+            if (totals) html += '<th>Total</th>';
+            html += '</tr></thead><tbody>';
+            for (const row of rows) {
+                html += `<tr><td>${esc(row.label)}</td>`;
+                for (const sat of sats) {
+                    const v = row.values[sat];
+                    html += `<td>${v == null ? '—' : esc(format(v))}</td>`;
+                }
+                if (totals) html += `<td>${esc(format(row.total))}</td>`;
+                html += '</tr>';
+            }
+            html += '</tbody>';
+            document.getElementById(tableId).innerHTML = html;
+        }
+
+        function renderStorageTable(slice) {
+            const totals = totalsOf(slice);
+            const rows = [];
+            for (let i = slice.days.length - 1; i >= 0; i--) {
+                const values = {};
+                for (const sat of trends.satellites) values[sat] = slice.storage[sat][i];
+                rows.push({ label: slice.days[i], values, total: totals[i] });
+            }
+            renderValueTable('trend-table', 'Date', rows, formatBytes, true);
+        }
+
+        function renderNodesTable(slice) {
+            const rows = [];
+            for (let i = slice.days.length - 1; i >= 0; i--) {
+                const values = {};
+                for (const sat of trends.satellites) values[sat] = slice.nodes.active[sat][i];
+                rows.push({ label: slice.days[i], values });
+            }
+            // No total column: the per-satellite counts overlap.
+            renderValueTable('nodes-trend-table', 'Date', rows, formatNumber, false);
+        }
+
+        // For node counters the last day of a month may be missing, so each
+        // satellite falls back to its own last reading inside that month.
+        function monthlyLevels(slice, valuesBySat) {
+            const months = [];
+            slice.days.forEach(day => {
+                const m = day.slice(0, 7);
+                if (months[months.length - 1] !== m) months.push(m);
+            });
+            const values = {};
+            for (const sat of trends.satellites) {
+                values[sat] = months.map(month => {
+                    let last = null;
+                    slice.days.forEach((day, i) => {
+                        if (day.slice(0, 7) === month && valuesBySat[sat][i] != null) {
+                            last = valuesBySat[sat][i];
+                        }
+                    });
+                    return last;
+                });
+            }
+            return { months, values };
+        }
+
+        function renderNodesDaily(slice) {
+            if (!trendCharts.nodesDaily) {
+                trendCharts.nodesDaily = echarts.init(document.getElementById('chart-nodes-daily'));
+            }
+            trendCharts.nodesDaily.setOption(
+                lineChartOption(slice.days, slice.nodes.active, formatNumber,
+                    { axisName: 'nodes', labelFormatter: v => v.slice(5) }),
+                { notMerge: true });
+        }
+
+        function renderNodesMonthly(slice) {
+            const { months, values } = monthlyLevels(slice, slice.nodes.active);
+            const tooFew = months.length < 3;
+            document.getElementById('chart-nodes-monthly').style.display = tooFew ? 'none' : '';
+            document.getElementById('nodes-monthly-empty').style.display = tooFew ? '' : 'none';
+            if (tooFew) return;
+            if (!trendCharts.nodesMonthly) {
+                trendCharts.nodesMonthly = echarts.init(document.getElementById('chart-nodes-monthly'));
+            }
+            trendCharts.nodesMonthly.setOption(
+                lineChartOption(months, values, formatNumber,
+                    { axisName: 'nodes', labelFormatter: v => v, boundaryGap: true }),
+                { notMerge: true });
+        }
+
+        const STATUS_PANELS = [
+            { title: 'Suspended at month end', field: 'suspended', added: false },
+            { title: 'Disqualified during month', field: 'disqualified', added: true },
+            { title: 'Exited during month', field: 'exited', added: true }
+        ];
+
+        // The last month is only covered up to the newest capture, so a
+        // per-month count for it is not comparable with a whole month.
+        function partialMonth() {
+            const last = trends.days[trends.days.length - 1];
+            const [y, m, d] = last.split('-').map(Number);
+            const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+            return d < daysInMonth ? last.slice(0, 7) : null;
+        }
+
+        // The first month in the data has no earlier month end to difference
+        // against, so it carries no value and is dropped rather than drawn
+        // as an empty slot.
+        function trimLeadingGap(months, values) {
+            const sats = trends.satellites;
+            let start = 0;
+            while (start < months.length && sats.every(s => values[s][start] == null)) start++;
+            if (start === 0) return { months, values };
+            const trimmed = {};
+            for (const sat of sats) trimmed[sat] = values[sat].slice(start);
+            return { months: months.slice(start), values: trimmed };
+        }
+
+        function statusSeries(slice) {
+            const allMonths = monthEnds(slice).map(e => e.month);
+            return STATUS_PANELS.map(panel => {
+                const raw = panel.added
+                    ? monthlyAdditions(panel.field, allMonths)
+                    : monthlyLevels(slice, slice.nodes[panel.field]).values;
+                const { months, values } = panel.added
+                    ? trimLeadingGap(allMonths, raw)
+                    : { months: allMonths, values: raw };
+                return { ...panel, months, values };
+            });
+        }
+
+        function renderStatusCharts(slice) {
+            const specs = statusSeries(slice);
+            const tooFew = monthEnds(slice).length < 3;
+            document.getElementById('status-charts').style.display = tooFew ? 'none' : '';
+            document.getElementById('status-empty').style.display = tooFew ? '' : 'none';
+            if (tooFew) return;
+            const partial = partialMonth();
+            const label = v => (v === partial ? v + '*' : v);
+            const charts = panels('status-charts', 'status', specs.map(s => s.title));
+            specs.forEach((spec, i) => {
+                charts[i].setOption(
+                    lineChartOption(spec.months, spec.values, formatNumber,
+                        { axisName: 'nodes', labelFormatter: label, boundaryGap: true }),
+                    { notMerge: true });
+            });
+        }
+
+        function renderStatusTable(slice) {
+            const specs = statusSeries(slice);
+            const sats = trends.satellites;
+            const months = monthEnds(slice).map(e => e.month);
+            const partial = partialMonth();
+            let html = '<thead><tr><th>Month</th><th>Measure</th>';
+            for (const sat of sats) html += `<th>${esc(sat)}</th>`;
+            html += '</tr></thead><tbody>';
+            for (let m = months.length - 1; m >= 0; m--) {
+                const month = months[m];
+                for (const spec of specs) {
+                    // Each measure keeps its own month list — the per-month
+                    // counts drop the first month — so look the month up by
+                    // name rather than reusing this row's position.
+                    const j = spec.months.indexOf(month);
+                    if (j < 0) continue;
+                    html += `<tr><td>${esc(month === partial ? month + '*' : month)}</td>`
+                        + `<td>${esc(spec.title)}</td>`;
+                    for (const sat of sats) {
+                        const v = spec.values[sat][j];
+                        html += `<td>${v == null ? '—' : esc(formatNumber(v))}</td>`;
+                    }
+                    html += '</tr>';
+                }
+            }
+            html += '</tbody>';
+            document.getElementById('status-trend-table').innerHTML = html;
+        }
+
+        function renderTrends() {
+            const slice = slicedTrends();
+            const view = trendState.view;
+            const span = `(${slice.days[0]} → ${slice.days[slice.days.length - 1]})`;
+
+            const blocks = {
+                'space-combined': 'combined', 'space-split': 'split', 'space-table': 'table',
+                'nodes-combined': 'combined', 'nodes-split': 'split', 'nodes-table-view': 'table'
+            };
+            for (const [id, forView] of Object.entries(blocks)) {
+                document.getElementById(id).classList.toggle('hidden', view !== forView);
+            }
+            // The status block is already faceted by status, so it has no
+            // per-satellite variant: charts in both chart views, table in Table.
+            document.getElementById('status-charts').classList.toggle('hidden', view === 'table');
+            document.getElementById('status-empty').classList.toggle('hidden', view === 'table');
+            document.getElementById('status-table-view').classList.toggle('hidden', view !== 'table');
+
+            renderKpis('kpi-row', slice, slice.storage, formatBytes);
+            renderKpis('kpi-row-nodes', slice, slice.nodes.active, formatNumber);
+            document.getElementById('daily-sub').textContent =
+                `Used space per day, stacked by satellite ${span}`;
+            document.getElementById('nodes-daily-sub').textContent =
+                `Active nodes per day, one line per satellite ${span}`;
+
+            if (view === 'combined') {
+                renderDailyChart(slice);
+                renderMonthlyChart(slice);
+                renderNodesDaily(slice);
+                renderNodesMonthly(slice);
+            } else if (view === 'split') {
+                renderSmallMultiples('small-multiples', 'spaceSplit',
+                    slice.days, slice.storage, toPB, formatBytes);
+                renderSmallMultiples('nodes-small-multiples', 'nodesSplit',
+                    slice.days, slice.nodes.active, v => v, formatNumber);
+            } else {
+                renderStorageTable(slice);
+                renderNodesTable(slice);
+                renderStatusTable(slice);
+            }
+            if (view !== 'table') renderStatusCharts(slice);
+
+            // Charts sized while hidden come out 0px wide.
+            requestAnimationFrame(resizeTrendCharts);
+        }
+
+        function resizeTrendCharts() {
+            for (const entry of Object.values(trendCharts)) {
+                if (!entry) continue;
+                if (Array.isArray(entry)) entry.forEach(c => c.resize());
+                else entry.resize();
+            }
+        }
+
+        function wireTrendControls() {
+            document.querySelectorAll('#trends [data-range]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    trendState.range = btn.dataset.range;
+                    document.querySelectorAll('#trends [data-range]').forEach(b => {
+                        b.setAttribute('aria-pressed', String(b === btn));
+                    });
+                    renderTrends();
+                });
+            });
+            document.querySelectorAll('#trends [data-view]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    trendState.view = btn.dataset.view;
+                    document.querySelectorAll('#trends [data-view]').forEach(b => {
+                        b.setAttribute('aria-pressed', String(b === btn));
+                    });
+                    renderTrends();
+                });
+            });
+        }
+
+        function trendError(message) {
+            const el = document.getElementById('trend-error');
+            el.style.display = 'block';
+            el.textContent = message;
+        }
+
+        // Deliberately not awaited by main(): the trend section and the daily
+        // snapshot load independently, so neither can block the other.
+        async function initTrends() {
+            try {
+                trends = await fetchTrends();
+                if (!trends.days || !trends.days.length) {
+                    trendError('trends.json contains no days.');
+                    return;
+                }
+                document.getElementById('trend-note').textContent =
+                    `Per-satellite storage_total_bytes and node counters, captured daily from `
+                    + `stats.storjshare.io. ${trends.days.length} days from ${trends.days[0]} to `
+                    + `${trends.days[trends.days.length - 1]}. Two known source quirks: the figures `
+                    + `sometimes repeat unchanged for several days, and on 21 days between `
+                    + `2026-06-19 and 2026-07-11 active nodes were reported as zero for one or more `
+                    + `satellites — those are shown as gaps rather than as zeros.`;
+                wireTrendControls();
+                renderTrends();
+                window.addEventListener('resize', resizeTrendCharts);
+            } catch (e) {
+                trendError('Could not render the used space trend: ' + e.message);
+            }
+        }
+
         async function main() {
+            initTrends();
             const result = await fetchLatestData();
             if (!result) {
                 document.getElementById('error').style.display = 'block';
