@@ -362,7 +362,9 @@
         <p class="chart-sub">A node that serves several satellites is counted once by each of
             them, so these series overlap and are never summed. EU1 and AP1 run within a few
             hundred nodes of each other and their lines sit on top of one another — use
-            <em>Per satellite</em> to separate them. These axes do not start at zero.</p>
+            <em>Per satellite</em> to separate them. US1-select is the number of active
+            select nodes US1 reports (since 2026-09-28); US1 itself stays the satellite's
+            full active count. These axes do not start at zero.</p>
         <div class="kpi-row" id="kpi-row-nodes"></div>
 
         <div id="nodes-combined">
@@ -430,6 +432,49 @@
             return SATELLITE_NAMES[host] || host;
         }
 
+        // Satellites whose select placement is shown as a satellite of its
+        // own; must match SELECT_SPLIT in build_trends.py.
+        const SELECT_SPLIT = { 'US1': 'US1-select' };
+
+        // Per-satellite stored bytes. With data-public.json, a SELECT_SPLIT
+        // satellite shows its public placement only, and the rest of its
+        // data.json total goes to its "-select" entry.
+        function storageByName(data, publicData) {
+            const publicBytes = {};
+            for (const [key, val] of Object.entries(publicData || {})) {
+                publicBytes[satelliteName(key)] = val.storage_total_bytes;
+            }
+            const out = [];
+            for (const [key, val] of Object.entries(data)) {
+                const name = satelliteName(key);
+                const total = val.storage_total_bytes;
+                const select = SELECT_SPLIT[name];
+                const pub = publicBytes[name];
+                if (select && pub != null) {
+                    out.push({ name, value: pub });
+                    out.push({ name: select, value: total - pub });
+                } else {
+                    out.push({ name, value: total });
+                }
+            }
+            return out;
+        }
+
+        // Rows for the node table and bar chart. A SELECT_SPLIT satellite
+        // reporting active_select_nodes gets an extra row carrying just that.
+        function nodeRows(nodes) {
+            const rows = [];
+            for (const [key, val] of Object.entries(nodes)) {
+                const name = satelliteName(key);
+                rows.push({ name, ...val, unvetted: val.total_nodes - val.vetted_nodes });
+                const select = SELECT_SPLIT[name];
+                if (select && val.active_select_nodes != null) {
+                    rows.push({ name: select, active_nodes: val.active_select_nodes });
+                }
+            }
+            return rows.sort((a, b) => b.active_nodes - a.active_nodes);
+        }
+
         function formatBytes(bytes) {
             const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'];
             let i = 0;
@@ -458,7 +503,13 @@
                 if (dataResp.ok && nodesResp.ok) {
                     const data = await dataResp.json();
                     const nodes = await nodesResp.json();
-                    return { data, nodes, date };
+                    // Only captured since 2026-09-28; older days have none.
+                    let publicData = null;
+                    try {
+                        const publicResp = await fetch(base + '/data-public.json');
+                        if (publicResp.ok) publicData = await publicResp.json();
+                    } catch (e) {}
+                    return { data, publicData, nodes, date };
                 }
             } catch (e) {}
             return null;
@@ -539,14 +590,13 @@
         }
 
         async function renderData(result) {
-            const { data, nodes, date } = result;
+            const { data, publicData, nodes, date } = result;
             document.getElementById('error').style.display = 'none';
 
-            // Storage pie chart
-            const storageData = Object.entries(data).map(([key, val]) => ({
-                name: satelliteName(key),
-                value: val.storage_total_bytes
-            })).sort((a, b) => b.value - a.value);
+            // Storage pie chart, coloured like the trend charts below.
+            const storageData = storageByName(data, publicData)
+                .map(d => ({ ...d, itemStyle: { color: seriesColor(d.name) } }))
+                .sort((a, b) => b.value - a.value);
 
             if (!storageChart) {
                 storageChart = makePieChart('chart-storage', storageData, function (params) {
@@ -557,11 +607,7 @@
             }
 
             // Nodes bar chart (active nodes only)
-            const satEntries = Object.entries(nodes).map(([key, val]) => ({
-                name: satelliteName(key),
-                ...val,
-                unvetted: val.total_nodes - val.vetted_nodes
-            })).sort((a, b) => b.active_nodes - a.active_nodes);
+            const satEntries = nodeRows(nodes);
             const satNames = satEntries.map(s => s.name);
 
             const nodesOpts = {
@@ -604,12 +650,7 @@
 
             const prevByName = {};
             if (prevNodes) {
-                for (const [key, val] of Object.entries(prevNodes)) {
-                    prevByName[satelliteName(key)] = {
-                        ...val,
-                        unvetted: val.total_nodes - val.vetted_nodes
-                    };
-                }
+                for (const row of nodeRows(prevNodes)) prevByName[row.name] = row;
             }
 
             // Nodes status table
@@ -622,11 +663,7 @@
                 { key: 'unvetted', label: 'Unvetted' },
             ];
 
-            const satellites = Object.entries(nodes).map(([key, val]) => ({
-                name: satelliteName(key),
-                ...val,
-                unvetted: val.total_nodes - val.vetted_nodes
-            })).sort((a, b) => b.active_nodes - a.active_nodes);
+            const satellites = satEntries;
 
             let html = '<thead><tr><th>Satellite</th>';
             for (const cat of categories) html += `<th>${cat.label}</th>`;
@@ -636,6 +673,11 @@
                 html += `<tr><td>${sat.name}</td>`;
                 for (const cat of categories) {
                     const val = sat[cat.key];
+                    // A select row only carries the active count.
+                    if (val == null) {
+                        html += '<td>—</td>';
+                        continue;
+                    }
                     const prevVal = prev ? prev[cat.key] : undefined;
                     html += `<td>${formatNumber(val)}${formatDelta(val, prevVal)}</td>`;
                 }
@@ -649,16 +691,18 @@
 
         const TRENDS_URL = 'https://raw.githubusercontent.com/elek/storjstats/refs/heads/main/trends.json';
 
-        // Categorical slots 1-4, dark steps, validated against the #1a1a2e
-        // page surface: all four clear the lightness band, the chroma floor,
-        // colour-blind separation (worst adjacent pair dE 8.4) and 3:1
+        // Categorical slots 1-5, dark steps, validated against the #1a1a2e
+        // page surface in the trends.json order (US1-select last): all five
+        // clear the lightness band, the chroma floor, colour-blind separation
+        // (worst adjacent pair dE 8.4), the normal-vision floor and 3:1
         // contrast. Colour is bound to a satellite, never to its rank, so
         // reordering or filtering never repaints the survivors.
         const SERIES_COLOR = {
             'US1': '#3987e5',
             'EU1': '#d95926',
             'AP1': '#199e70',
-            'Salt Lake': '#c98500'
+            'Salt Lake': '#c98500',
+            'US1-select': '#d55181'
         };
         const FALLBACK_COLOR = '#898781';
         const INK = { primary: '#e0e0e0', secondary: '#aaa', muted: '#898781' };
@@ -675,6 +719,13 @@
 
         function seriesColor(name) {
             return SERIES_COLOR[name] || FALLBACK_COLOR;
+        }
+
+        // Satellites with at least one value, in display order. US1-select
+        // only has data from 2026-09-28, and only for active nodes, so it is
+        // left out wherever it would be an empty series.
+        function withData(valuesBySat) {
+            return trends.satellites.filter(sat => valuesBySat[sat].some(v => v != null));
         }
 
         // Charts plot PB rather than raw bytes, so the axis can pick round
@@ -806,7 +857,7 @@
 
         function renderDailyChart(slice) {
             const totals = totalsOf(slice);
-            const sats = trends.satellites;
+            const sats = withData(slice.storage);
             const series = sats.map((sat, idx) => ({
                 name: sat,
                 type: 'line',
@@ -874,7 +925,7 @@
 
         function renderMonthlyChart(slice) {
             const ends = monthEnds(slice);
-            const sats = trends.satellites;
+            const sats = withData(slice.storage);
 
             // Two columns spread over the full width reads as a broken chart
             // rather than a comparison, so say so instead of drawing it.
@@ -993,7 +1044,7 @@
 
         // One satellite per panel, each on its own zero-based axis.
         function renderSmallMultiples(hostId, key, days, valuesBySat, plot, format) {
-            const sats = trends.satellites;
+            const sats = withData(valuesBySat);
             const charts = panels(hostId, key, sats, seriesColor);
             sats.forEach((sat, i) => {
                 charts[i].setOption({
@@ -1040,7 +1091,7 @@
         // opts: { axisName, labelFormatter, zeroBased, boundaryGap }
         function lineChartOption(categories, valuesBySat, format, opts) {
             const { axisName, labelFormatter, zeroBased, boundaryGap } = opts;
-            const sats = trends.satellites;
+            const sats = withData(valuesBySat);
             return {
                 color: sats.map(seriesColor),
                 tooltip: {
@@ -1082,7 +1133,10 @@
                 series: sats.map(sat => ({
                     name: sat,
                     type: 'line',
-                    symbol: 'none',
+                    // A lone reading draws no line, so it gets a marker
+                    // (US1-select on its first day).
+                    symbol: valuesBySat[sat].filter(v => v != null).length < 2 ? 'circle' : 'none',
+                    symbolSize: 8,
                     // Gaps stay gaps: joining across a missing day would draw a
                     // slope the data never showed.
                     connectNulls: false,
@@ -1119,7 +1173,7 @@
         function renderKpis(hostId, slice, valuesBySat, format) {
             const label = rangeLabel(slice);
             let html = '';
-            for (const sat of trends.satellites) {
+            for (const sat of withData(valuesBySat)) {
                 const vals = valuesBySat[sat];
                 const current = [...vals].reverse().find(v => v !== null && v !== undefined);
                 const first = vals.find(v => v !== null && v !== undefined);
@@ -1293,7 +1347,8 @@
 
         function renderStatusTable(slice) {
             const specs = statusSeries(slice);
-            const sats = trends.satellites;
+            const sats = trends.satellites.filter(sat =>
+                specs.some(spec => spec.values[sat].some(v => v != null)));
             const months = monthEnds(slice).map(e => e.month);
             const partial = partialMonth();
             let html = '<thead><tr><th>Month</th><th>Measure</th>';
@@ -1416,7 +1471,10 @@
                     + `${trends.days[trends.days.length - 1]}. Two known source quirks: the figures `
                     + `sometimes repeat unchanged for several days, and on 21 days between `
                     + `2026-06-19 and 2026-07-11 active nodes were reported as zero for one or more `
-                    + `satellites — those are shown as gaps rather than as zeros.`;
+                    + `satellites — those are shown as gaps rather than as zeros. From 2026-09-28 `
+                    + `US1 storage is split in two: US1 is its public placement (data-public.json) `
+                    + `and US1-select the rest of its data.json total, so the US1 series drops on `
+                    + `that day while the stacked total carries on unchanged.`;
                 wireTrendControls();
                 renderTrends();
                 window.addEventListener('resize', resizeTrendCharts);

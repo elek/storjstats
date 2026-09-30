@@ -20,7 +20,14 @@ SATELLITE_NAMES = {
 }
 
 # Fixed display order, so a satellite always keeps the same categorical color.
-SATELLITE_ORDER = ["US1", "EU1", "AP1", "Salt Lake"]
+SATELLITE_ORDER = ["US1", "EU1", "AP1", "Salt Lake", "US1-select"]
+
+# Satellites whose select placement is tracked as a satellite of its own.
+# From the day data-public.json exists, the satellite's storage is its public
+# placement only and "<name>-select" gets the rest (data.json minus
+# data-public.json). Its active nodes are nodes.json's active_select_nodes;
+# the satellite's own node counters are left as reported.
+SELECT_SPLIT = {"US1": "US1-select"}
 
 # Node counters to carry over, as output_name -> key in nodes.json.
 NODE_FIELDS = {
@@ -89,13 +96,28 @@ def main():
         nodes = load(os.path.join(day_path, "nodes.json"))
         if data is None and nodes is None:
             continue
+        public_path = os.path.join(day_path, "data-public.json")
+        public = load(public_path) if os.path.exists(public_path) else None
+        public_storage = {
+            satellite_name(key): number(val.get("storage_total_bytes"))
+            for key, val in (public or {}).items()
+        }
 
         storage = {}
         for key, val in (data or {}).items():
             name = satellite_name(key)
             if name not in seen:
                 seen.append(name)
-            storage[name] = number(val.get("storage_total_bytes"))
+            total = number(val.get("storage_total_bytes"))
+            select = SELECT_SPLIT.get(name)
+            pub = public_storage.get(name)
+            if select and total is not None and pub is not None:
+                if select not in seen:
+                    seen.append(select)
+                storage[name] = pub
+                storage[select] = total - pub
+            else:
+                storage[name] = total
 
         counters = {field: {} for field in NODE_FIELDS}
         for key, val in (nodes or {}).items():
@@ -108,6 +130,12 @@ def main():
                     dropped_zeros += 1
                     v = None
                 counters[field][name] = v
+            select = SELECT_SPLIT.get(name)
+            select_active = number(val.get("active_select_nodes"))
+            if select and select_active is not None:
+                if select not in seen:
+                    seen.append(select)
+                counters["active"][select] = select_active
 
         days.append(date)
         storage_by_day[date] = storage

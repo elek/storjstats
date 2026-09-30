@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BASE_URL="https://stats.storjshare.io"
-FILES="accounts.json nodes.json data.json nodes_geo.json"
+FILES="accounts.json nodes.json data.json data-public.json nodes_geo.json"
 
 dir="$(date +%Y/%m/%d)"
 
