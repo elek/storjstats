@@ -462,11 +462,15 @@
 
         // Rows for the node table and bar chart. A SELECT_SPLIT satellite
         // reporting active_select_nodes gets an extra row carrying just that.
+        // total_nodes is active + offline + disqualified + exited, and
+        // vetted_nodes counts exited nodes too (it exceeds active + offline),
+        // so only the disqualified ones are taken out to get the unvetted.
         function nodeRows(nodes) {
             const rows = [];
             for (const [key, val] of Object.entries(nodes)) {
                 const name = satelliteName(key);
-                rows.push({ name, ...val, unvetted: val.total_nodes - val.vetted_nodes });
+                const unvetted = val.total_nodes - val.disqualified_nodes - val.vetted_nodes;
+                rows.push({ name, ...val, unvetted });
                 const select = SELECT_SPLIT[name];
                 if (select && val.active_select_nodes != null) {
                     rows.push({ name: select, active_nodes: val.active_select_nodes });
